@@ -8,7 +8,7 @@ use Exporter;
 use Carp 'croak';
 
 our @ISA = qw/Exporter/;
-our @EXPORT_OK = qw/Load LoadFile/;
+our @EXPORT_OK = qw/Load LoadFile JSON_BACKEND YAML_BACKEND/;
 
 sub load_file {
   my ($class, $filename) = @_;
@@ -40,16 +40,17 @@ sub load_string {
 }
 
 sub load_yaml_string {
-  my ($class, $string) = @_;
-  my $backend = $class->yaml_backend();
-  my $data = eval { no strict 'refs'; &{"$backend\::Load"}($string) };
+  #my ($class, $string) = @_;
+  #YAML_BACKEND not folded, since YAML_BACKEND doesn't exist yet
+  my $data = eval { no strict 'refs'; &{YAML_BACKEND()."\::Load"}($_[1]) };
   croak $@ if $@;
   return $data || {}; # in case document was valid but empty
 }
 
 sub load_json_string {
-  my ($class, $string) = @_;
-  my $data = eval { $class->json_backend()->new->decode($string) };
+  #my ($class, $string) = @_;
+  #JSON_BACKEND not folded, since JSON_BACKEND doesn't exist yet
+  my $data = eval { JSON_BACKEND()->new->decode($_[1]) };
   croak $@ if $@;
   return $data || {};
 }
@@ -99,12 +100,11 @@ sub _can_load {
   $file .= ".pm";
   return 1 if $INC{$file};
   return 0 if exists $INC{$file}; # prior load failed
-  eval { require $file; 1 }
-    or return 0;
-  if ( defined $version ) {
-    eval { $module->VERSION($version); 1 }
-      or return 0;
-  }
+  eval {
+    require $file;
+    $module->VERSION($version) if defined $version;
+    1;
+  } or return 0;
   return 1;
 }
 
@@ -121,6 +121,12 @@ sub Load ($) {
   croak $@ if $@;
   return $object;
 }
+
+require constant;
+constant->import({
+    'JSON_BACKEND' => Parse::CPAN::Meta->json_backend(),
+    'YAML_BACKEND' => Parse::CPAN::Meta->yaml_backend()
+});
 
 1;
 
@@ -208,21 +214,31 @@ C<load_json_string>.
 If you don't know whether a string contains YAML or JSON data, this method
 will use some heuristics and guess.  If it can't tell, it assumes YAML.
 
+=head2 YAML_BACKEND
 =head2 yaml_backend
 
+  use Parse::CPAN::Meta qw( YAML_BACKEND );
+  my $data = &{YAML_BACKEND."\::Load"}($filebuffer);
+  #deprecated
   my $backend = Parse::CPAN::Meta->yaml_backend;
 
-Returns the module name of the YAML serializer. See L</ENVIRONMENT>
-for details.
+Returns the module name of the YAML serializer. Use the upper case exported
+const version for performance. See L</ENVIRONMENT> for details.
 
+=head2 JSON_BACKEND
 =head2 json_backend
 
+  use Parse::CPAN::Meta qw( JSON_BACKEND );
+  my $obj = JSON_BACKEND->new();
+  #deprecated
   my $backend = Parse::CPAN::Meta->json_backend;
 
 Returns the module name of the JSON serializer.  This will either
 be L<JSON::PP> or L<JSON>.  Even if C<PERL_JSON_BACKEND> is set,
 this will return L<JSON> as further delegation is handled by
-the L<JSON> module.  See L</ENVIRONMENT> for details.
+the L<JSON> module.  The upper case exported const version decides once on
+startup which module to use. Use it for performance reasons.
+See L</ENVIRONMENT> for details.
 
 =head1 FUNCTIONS
 
